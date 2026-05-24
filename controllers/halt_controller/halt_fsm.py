@@ -23,25 +23,32 @@ class HaltFSM:
         self.quiet_duration = Config.QUIET_DURATION_DEFAULT
         self.pending_claps = 0
 
+    def _apply_static_pose(self, state):
+        """Apply the one-off pose for states that do not animate over time."""
+        if state == Config.IDLE:
+            self.halt_robot.set_idle_pose()
+        elif state == Config.FAIL_SAFE:
+            self.halt_robot.set_fail_safe_pose()
+        elif state == Config.MONITORING:
+            self.halt_robot.set_monitoring_pose()
+        elif state == Config.QUIET_MODE:
+            self.halt_robot.set_quiet_pose()
+
     def enter_state(self, new_state):
-        """Transition to a new FSM state and apply any base pose immediately."""
+        """Transition to a new FSM state and apply any immediate static pose."""
+        if new_state not in Config.VALID_STATES:
+            Config.log(f"[FAIL_SAFE] Invalid transition requested: {new_state}")
+            new_state = Config.FAIL_SAFE
+
         now = self.robot.getTime()
         Config.log(f"[FSM] {self.current_state} → {new_state}  (t={now:.1f}s)")
         self.current_state = new_state
         self.state_start_time = now
         self.gesture_phase_start = now
-
-        if new_state == Config.IDLE:
-            self.halt_robot.set_idle_pose()
-        elif new_state == Config.FAIL_SAFE:
-            self.halt_robot.set_fail_safe_pose()
-        elif new_state == Config.MONITORING:
-            self.halt_robot.set_monitoring_pose()
-        elif new_state == Config.QUIET_MODE:
-            self.halt_robot.set_quiet_pose()
+        self._apply_static_pose(new_state)
 
     def update_adaptive_logic(self, response_type):
-        """Adjust reminder thresholds based on whether the user responded quickly or late."""
+        """Adjust reminder thresholds after a quick response or a required escalation."""
         if response_type == "quick":
             self.gentle_threshold = min(
                 self.gentle_threshold + Config.ADAPTIVE_STEP,
@@ -61,7 +68,7 @@ class HaltFSM:
             )
 
     def handle_keyboard(self):
-        """Poll the keyboard and update manual presence or clap inputs for this timestep."""
+        """Poll the keyboard and handle manual presence, clap, and fail-safe inputs."""
         key = self.keyboard.getKey()
         while key != -1:
             char = chr(key).upper() if 0 < key < 128 else None
@@ -110,7 +117,6 @@ class HaltFSM:
             return
 
         if self.current_state == Config.FAIL_SAFE:
-            self.halt_robot.set_fail_safe_pose()
             return
 
         if not self.presence.user_present and self.current_state in Config.INTERACTION_STATES:
@@ -123,12 +129,10 @@ class HaltFSM:
             return
 
         if self.current_state == Config.IDLE:
-            self.halt_robot.set_idle_pose()
             if self.presence.user_present:
                 self.enter_state(Config.MONITORING)
 
         elif self.current_state == Config.MONITORING:
-            self.halt_robot.set_monitoring_pose()
             if elapsed >= self.gentle_threshold:
                 self.enter_state(Config.GENTLE_REMINDER)
 
@@ -168,7 +172,6 @@ class HaltFSM:
                 self.enter_state(next_state)
 
         elif self.current_state == Config.QUIET_MODE:
-            self.halt_robot.set_quiet_pose()
             if elapsed >= self.quiet_duration:
                 next_state = Config.MONITORING if self.presence.user_present else Config.IDLE
                 Config.log(f"[FSM] Quiet mode expired — returning to {next_state}")

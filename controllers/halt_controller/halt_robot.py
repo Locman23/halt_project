@@ -162,7 +162,7 @@ class HaltRobot:
         self._set_head(0.0, nod)
 
     def set_quiet_pose(self):
-        """Both hands raised to cover the face - quiet/do-not-disturb pose."""
+        """Hands raised near the face for a quiet/do-not-disturb pose."""
         self._set_head(0.0, 0.1)
         self._set_right_arm(0.5, -0.1, 0.5, 1.2, 0.0)
         self._set_left_arm(0.5, 0.1, -0.5, -1.2)
